@@ -29,6 +29,14 @@ struct __attribute__((__packed__)) rootdir_entry{
 	char unused[10];
 };
 
+struct file_descriptor_entry{
+	char filename[16];
+	size_t offset;
+	uint16_t block_index;
+};
+
+struct file_descriptor_entry* fd_table = NULL;
+
 struct superblock* sb = NULL;
 struct rootdir_entry* rd = NULL;
 fat_entry* fat = NULL;
@@ -37,8 +45,8 @@ int fs_mount(const char *diskname)
 {
 	char expected_sig[8] = {'E','C','S','1','5','0','F','S'};
 	sb = malloc(sizeof(struct superblock));
-	
 	rd = calloc(sizeof(struct rootdir_entry),128);
+	fd_table = calloc(sizeof(struct file_descriptor_entry),32);
 
 	if(block_disk_open(diskname) == -1){
 		free(rd);
@@ -109,6 +117,7 @@ int fs_umount(void)
 {
 	if(sb != NULL){
 		free(sb);
+		sb = NULL;
 	}
 	if(rd != NULL){
 		free(rd);
@@ -130,21 +139,46 @@ int fs_info(void)
 
 int fs_create(const char *filename)
 {
-	strcpy(rd[0].filename, filename);
-	rd[0].file_size = 0;
-	rd[0].block_index = FAT_EOC;
+	if(strlen(filename) > FS_FILENAME_LEN-1){
+		return -1;
+	}
+	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
+		if(rd[i].filename[0] == '\0'){
+			strncpy(rd[i].filename, filename, FS_FILENAME_LEN);
+			rd[i].file_size = 0;
+			rd[i].block_index = FAT_EOC;
+			break;
+		}
+		else{}
+	}
 
 	/* TODO: Phase 2 */
 }
 
 int fs_delete(const char *filename)
 {
+	uint16_t fat_index_looper = 0;
+	uint16_t next_index = 0; 
+	
+	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
+		if(!strcmp(rd[i].filename, filename)){
+			fat_index_looper = rd[i].block_index;
+			memset(&rd[i], 0, sizeof(struct rootdir_entry));
+			break;
+		}
+	} 
+	while(fat[fat_index_looper] != FAT_EOC){
+		next_index = fat[fat_index_looper];
+		fat[fat_index_looper] = 0;
+		fat_index_looper = next_index;
+	}
+	fat[fat_index_looper] = 0;
 	/* TODO: Phase 2 */
 }
 
 int fs_ls(void)
 {
-	for(int i=0; i<128; i++){
+	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
 		if(rd[i].filename[0] == '\0'){
 		}
 		else{
@@ -156,21 +190,52 @@ int fs_ls(void)
 
 int fs_open(const char *filename)
 {
+	int file_desc = -1;
+	for(int i=0; i<FS_OPEN_MAX_COUNT; i++){
+		if(fd_table[i].filename[0] == '\0'){
+			file_desc = i;
+			strncpy(fd_table[i].filename, filename, FS_FILENAME_LEN);
+			fd_table[i].offset = 0;
+			break;
+		}
+		else{}
+	}
+	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
+		if(!strcmp(rd[i].filename, filename)){
+			fd_table[file_desc].block_index = rd[i].block_index;
+		}
+	}
+	return file_desc;
 	/* TODO: Phase 3 */
 }
 
 int fs_close(int fd)
 {
+	memset(&fd_table[fd], 0, sizeof(struct file_descriptor_entry));
 	/* TODO: Phase 3 */
 }
 
 int fs_stat(int fd)
 {
+	int file_size = -1;
+	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
+		if(!strcmp(rd[i].filename, fd_table[fd].filename)){
+			file_size = rd[i].file_size;
+			break;
+		}
+	}
+	return file_size;
+
 	/* TODO: Phase 3 */
 }
 
 int fs_lseek(int fd, size_t offset)
 {
+	if(fd_table[fd].filename[0] == '\0' || fs_stat(fd) < offset){
+		return -1;
+	}
+	fd_table[fd].offset = offset;
+	return 0;
 	/* TODO: Phase 3 */
 }
 
@@ -184,3 +249,12 @@ int fs_read(int fd, void *buf, size_t count)
 	/* TODO: Phase 4 */
 }
 
+int offset_to_block(int fd, size_t offset){
+	int block_number;
+	uint16_t fat_looper = fd_table[fd].block_index;
+	block_number = offset/BLOCK_SIZE;
+	for(int i=0; i<block_number; i++){
+		fat_looper = fat[fat_looper];
+	}
+	return fat_looper;
+}
