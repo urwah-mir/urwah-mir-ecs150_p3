@@ -241,11 +241,63 @@ int fs_lseek(int fd, size_t offset)
 
 int fs_write(int fd, void *buf, size_t count)
 {
+	int block_offset = 0;
+	int amount_to_read = 0;
+	int amount_read = 0;
+
+	char bounce_buf[BLOCK_SIZE];
+
+	while(count > 0 && offset_to_block(fd, fd_table[fd].offset) != FAT_EOC){
+		block_read(offset_to_block(fd, fd_table[fd].offset), bounce_buf);
+		
+		block_offset = fd_table[fd].offset%BLOCK_SIZE;
+		
+		if(block_offset+count < BLOCK_SIZE){
+			amount_to_read = count;
+		}
+		else{
+			amount_to_read = BLOCK_SIZE-block_offset;
+		}
+		memcpy(buf, bounce_buf+block_offset, amount_to_read);
+		amount_read += amount_to_read;
+		fd_table[fd].offset += amount_to_read;
+		count -= amount_to_read;
+		buf += amount_to_read;
+	}
 	/* TODO: Phase 4 */
 }
 
 int fs_read(int fd, void *buf, size_t count)
 {
+	int block_offset = 0;
+	int amount_to_read = 0;
+	int amount_read = 0;
+
+	char bounce_buf[BLOCK_SIZE];
+
+	//do we have to check is the amount we wanna read is greater than file size
+	if(fd_table[fd].offset+count > fs_stat){
+		return -1;
+	}
+
+	while(count > 0){
+		block_read(offset_to_block(fd, fd_table[fd].offset), bounce_buf);
+		
+		block_offset = fd_table[fd].offset%BLOCK_SIZE;
+		
+		if(block_offset+count < BLOCK_SIZE){
+			amount_to_read = count;
+		}
+		else{
+			amount_to_read = BLOCK_SIZE-block_offset;
+		}
+		memcpy(buf, bounce_buf+block_offset, amount_to_read);
+		amount_read += amount_to_read;
+		fd_table[fd].offset += amount_to_read;
+		count -= amount_to_read;
+		buf += amount_to_read;
+	}
+	return amount_read;
 	/* TODO: Phase 4 */
 }
 
@@ -255,6 +307,9 @@ int offset_to_block(int fd, size_t offset){
 	block_number = offset/BLOCK_SIZE;
 	for(int i=0; i<block_number; i++){
 		fat_looper = fat[fat_looper];
+		if(fat_looper == FAT_EOC){
+			break;
+		}
 	}
 	return fat_looper;
 }
