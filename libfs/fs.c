@@ -79,6 +79,7 @@ int fs_mount(const char *diskname)
 
 	//allocate and read FAT
 	fat = malloc(sb->fat_block_amount * BLOCK_SIZE);
+
 	for(int i=1; i <= sb->fat_block_amount; i++){
 		if(block_read(i,fat+(BLOCK_SIZE*(i-1))) == -1){
 			fs_umount();
@@ -136,6 +137,21 @@ int fs_umount(void)
 
 int fs_info(void)
 {
+	if(sb == NULL){
+		//check if this is right
+		perror("no virtual disk opened");
+		return -1;
+	}
+	printf("%s \n", "FS Info:");
+	printf("%s %d\n", "total_blk_count=", sb->total_blocks);
+	printf("%s %d\n", "fat_blk_count=", sb->fat_block_amount);
+	printf("%s %d\n", "rdir_blk=", sb->root_dir_index);
+	printf("%s %d\n", "data_blk=", sb->data_block_start);
+	printf("%s %d\n", "data_blk_count=");
+	printf("%s \n", "fat_free_ratio=");
+	printf("%s \n", "rdir_free_ratio=");
+
+	return 0;
 	/* TODO: Phase 1 */
 }
 
