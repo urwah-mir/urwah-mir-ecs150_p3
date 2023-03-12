@@ -12,11 +12,11 @@
 /* TODO: Phase 1 */
 struct __attribute__((__packed__)) superblock{
 	char signature[8];
-	uint16_t virtual_disk;
-	uint16_t root_directory;
+	uint16_t total_blocks;
+	uint16_t root_dir_index;
 	uint16_t data_block_start;
 	uint16_t data_block_amount;
-	uint8_t fat_blocks;
+	uint8_t fat_block_amount;
 	char unused[4079];
 };
 
@@ -48,84 +48,86 @@ int fs_mount(const char *diskname)
 	rd = calloc(sizeof(struct rootdir_entry),128);
 	fd_table = calloc(sizeof(struct file_descriptor_entry),32);
 
+	//if no valid filesystem could be located ??
 	if(block_disk_open(diskname) == -1){
 		free(rd);
 		free(sb);
 		return -1;
 	}
 
+	//read superblock
 	if(block_read(0, sb) == -1){
-		free(rd);
-		free(sb);
-		block_disk_close();
+		fs_umount();
 		return -1;
 	}
 
+	//verify filesystem format
 	if (memcmp(sb->signature, expected_sig, 8) != 0){
-		free(rd);
-		free(sb);
-		block_disk_close();
+		fs_umount();
 		return -1;	
 	}
 
-	if (block_disk_count() != sb->virtual_disk){
-		free(rd);
-		free(sb);
-		block_disk_close();
+	if (block_disk_count() != sb->total_blocks){
+		fs_umount();
 		return -1;	
 	}
 
-	if (sb->fat_blocks+1 != sb->root_directory){
-		free(rd);
-		free(sb);
-		block_disk_close();
+	if (sb->fat_block_amount+1 != sb->root_dir_index){
+		fs_umount();
 		return -1;	
 	}
 
-	fat = malloc(sb->fat_blocks * BLOCK_SIZE);
-	for(int i=1; i <= sb->fat_blocks; i++){
+	//allocate and read FAT
+	fat = malloc(sb->fat_block_amount * BLOCK_SIZE);
+	for(int i=1; i <= sb->fat_block_amount; i++){
 		if(block_read(i,fat+(BLOCK_SIZE*(i-1))) == -1){
-			free(rd);
-			free(sb);
-			free(fat);
-			block_disk_close();
+			fs_umount();
 			return -1;
 		}	
 	}
 
+	//verify FAT format
 	if(fat[0] != FAT_EOC){
-		free(rd);
-		free(sb);
-		free(fat);
-		block_disk_close();
+		fs_umount();
 		return -1;
 	}
 
-	if(block_read(sb->root_directory, rd) == -1){
-		free(rd);
-		free(sb);
-		free(fat);
-		block_disk_close();
+	//read root directory
+	if(block_read(sb->root_dir_index, rd) == -1){
+		fs_umount();
 		return -1;
 	}
-	
 
 	/* TODO: Phase 1 */
 }
 
 int fs_umount(void)
 {
+	if(sb == NULL){
+		perror("no filesystem mounted");
+		return -1;
+	}
+	for(int i=0; i<FS_OPEN_MAX_COUNT; i++){
+		if(fd_table[i].filename[0] != '\0'){
+			perror("open file descriptors");
+			return -1;
+		}
+	}
+	//move close block disk here ?
 	if(sb != NULL){
 		free(sb);
 		sb = NULL;
 	}
 	if(rd != NULL){
 		free(rd);
+		rd = NULL;
 	}
 	if(fat != NULL){
 		free(fat);
+		fat = NULL;
 	}
 	if(block_disk_close() == -1){
+		perror("virtual disk cannot be closed");
 		return -1;
 	}
 	return 0;
