@@ -35,11 +35,11 @@ struct file_descriptor_entry{
 	uint16_t block_index;
 };
 
-struct file_descriptor_entry* fd_table = NULL;
-
 struct superblock* sb = NULL;
 struct rootdir_entry* rd = NULL;
 fat_entry* fat = NULL;
+struct file_descriptor_entry* fd_table = NULL;
+
 
 int fs_mount(const char *diskname)
 {
@@ -52,6 +52,7 @@ int fs_mount(const char *diskname)
 	if(block_disk_open(diskname) == -1){
 		free(rd);
 		free(sb);
+		free(fd_table);
 		return -1;
 	}
 
@@ -127,6 +128,10 @@ int fs_umount(void)
 		free(fat);
 		fat = NULL;
 	}
+	if(fd_table != NULL){
+		free(fd_table);
+		fd_table = NULL;
+	}
 	if(block_disk_close() == -1){
 		perror("virtual disk cannot be closed");
 		return -1;
@@ -157,7 +162,23 @@ int fs_info(void)
 
 int fs_create(const char *filename)
 {
+	//check error handling
+	if(sb == NULL){
+		perror("no filesystem mounted");
+		return -1;
+	}
+	if(filename[strlen(filename)] != '/0'){
+		perror("invalid filename");
+		return -1;
+	}
+	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
+		if(strcmp(rd[i].filename, filename) == 0){
+			perror("filename already exists");
+			return -1;
+		}
+	}
 	if(strlen(filename) > FS_FILENAME_LEN-1){
+		perror("filename is too long");
 		return -1;
 	}
 	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
@@ -165,37 +186,67 @@ int fs_create(const char *filename)
 			strncpy(rd[i].filename, filename, FS_FILENAME_LEN);
 			rd[i].file_size = 0;
 			rd[i].block_index = FAT_EOC;
-			break;
+			return 0;
 		}
 		else{}
 	}
-
+	perror("root directory has max number of files");
+	return -1;
 	/* TODO: Phase 2 */
 }
 
 int fs_delete(const char *filename)
 {
 	uint16_t fat_index_looper = 0;
-	uint16_t next_index = 0; 
+	uint16_t next_index = 0;
+	int file_found = 0;
 	
+	if(sb == NULL){
+		perror("no filesystem mounted");
+		return -1;
+	}
+	if(filename[strlen(filename)] != '/0'){
+		perror("invalid filename");
+		return -1;
+	}
+	for(int i=0; i<FS_OPEN_MAX_COUNT; i++){
+		if(!strcmp(fd_table[i].filename, filename)){
+			perror("file is currently open");
+			return -1;
+		}
+	}
+
 	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
 		if(!strcmp(rd[i].filename, filename)){
 			fat_index_looper = rd[i].block_index;
 			memset(&rd[i], 0, sizeof(struct rootdir_entry));
+			file_found = 1;
 			break;
 		}
-	} 
+	}
+
+	if(file_found == 0){
+		perror("no file of that name found");
+		return -1;
+	}
+
 	while(fat[fat_index_looper] != FAT_EOC){
 		next_index = fat[fat_index_looper];
 		fat[fat_index_looper] = 0;
 		fat_index_looper = next_index;
 	}
 	fat[fat_index_looper] = 0;
+	return 0;
 	/* TODO: Phase 2 */
 }
 
 int fs_ls(void)
 {
+	if(sb == NULL){
+		perror("no filesystem mounted");
+		return -1;
+	}
+	printf("%s \n","FS Ls:");
 	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
 		if(rd[i].filename[0] == '\0'){
 		}
@@ -203,6 +254,7 @@ int fs_ls(void)
 			printf("%s\n",rd[i].filename);
 		}
 	}
+	return 0;
 	/* TODO: Phase 2 */
 }
 
