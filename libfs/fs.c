@@ -87,10 +87,12 @@ int fs_mount(const char *diskname)
 	//allocate and read FAT
 
 	fat_size = sb->fat_block_amount * BLOCK_SIZE;
-	fat = malloc(sizeof(fat_entry) * sb->data_block_amount);
-
+	//fat = malloc(sizeof(fat_entry) * sb->data_block_amount);
+		//this may underallocate space (ie in the case of 2 data blocks)
+		//to fix, read differently, [block read into buffer and then memcpy the buffer into the fat]
+	fat = malloc(fat_size);
 	for(int i=1; i <= sb->fat_block_amount; i++){
-		if(block_read(i,fat+(BLOCK_SIZE*(i-1))) == -1){
+		if(block_read(i,(void*)fat+(BLOCK_SIZE*(i-1))) == -1){
 			perror("bad fat read");
 			free_all();
 			return -1;
