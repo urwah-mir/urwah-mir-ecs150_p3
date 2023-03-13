@@ -47,10 +47,11 @@ struct file_descriptor_entry* fd_table = NULL;
 
 int fs_mount(const char *diskname)
 {
+	size_t fat_size;
 	char expected_sig[8] = {'E','C','S','1','5','0','F','S'};
 	sb = malloc(sizeof(struct superblock));
-	rd = calloc(sizeof(struct rootdir_entry),128);
-	fd_table = calloc(sizeof(struct file_descriptor_entry),32);
+	rd = calloc(128, sizeof(struct rootdir_entry));
+	fd_table = calloc(32, sizeof(struct file_descriptor_entry));
 
 	if(block_disk_open(diskname) == -1){
 		free_all();
@@ -84,7 +85,9 @@ int fs_mount(const char *diskname)
 	}
 
 	//allocate and read FAT
-	fat = malloc(sb->fat_block_amount * BLOCK_SIZE);
+
+	fat_size = sb->fat_block_amount * BLOCK_SIZE;
+	fat = malloc(sizeof(fat_entry) * sb->data_block_amount);
 
 	for(int i=1; i <= sb->fat_block_amount; i++){
 		if(block_read(i,fat+(BLOCK_SIZE*(i-1))) == -1){
