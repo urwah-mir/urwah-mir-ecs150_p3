@@ -176,6 +176,7 @@ int fs_info(void)
 	printf("%s %d\n", "rdir_blk=", sb->root_dir_index);
 	printf("%s %d\n", "data_blk=", sb->data_block_start);
 	printf("%s %d\n", "data_blk_count=", sb->data_block_amount);
+	
 	for(int i=0; i<sb->data_block_amount; i++){
 		if(fat[i] == 0){
 			free_fat++;
@@ -188,7 +189,7 @@ int fs_info(void)
 			free_rd++;
 		}
 	}
-	printf("rdir_free_ratio= \n");
+	printf("rdir_free_ratio=%d/%d\n", free_rd, FS_FILE_MAX_COUNT);
 
 	return 0;
 	/* TODO: Phase 1 */
@@ -245,14 +246,14 @@ int fs_delete(const char *filename)
 		return -1;
 	}
 	for(int i=0; i<FS_OPEN_MAX_COUNT; i++){
-		if(!strcmp(fd_table[i].filename, filename)){
+		if(strcmp(fd_table[i].filename, filename) == 0){
 			perror("file is currently open");
 			return -1;
 		}
 	}
 
 	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
-		if(!strcmp(rd[i].filename, filename)){
+		if(strcmp(rd[i].filename, filename) == 0){
 			fat_index_looper = rd[i].block_index;
 			memset(&rd[i], 0, sizeof(struct rootdir_entry));
 			file_found = 1;
@@ -406,6 +407,40 @@ int fs_write(int fd, void *buf, size_t count)
 	int amount_written = 0;
 
 	char dirty_buf[BLOCK_SIZE];
+	int rootdir_index = 0;
+	int new_block = 0;
+
+	if(sb == NULL){
+		perror("no filesystem is currently mounted");
+		return -1;
+	}
+	if(fd > FS_OPEN_MAX_COUNT-1 || fd_table[fd].filename[0] == '\0'){
+		perror("invalid file descriptor");
+		return -1;
+	}
+	if(buf == NULL){
+		perror("invalid buffer");
+		return -1;
+	}
+
+	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
+		if(!strcmp(rd[i].filename, fd_table[fd].filename)){
+			rootdir_index = i;
+			break;
+		}
+	}
+	//if file is empty (has no allocated blocked)
+	//allocate first block, update rd and fd
+	if(rd[rootdir_index].block_index == FAT_EOC){
+		 new_block = allocate_data_block();
+		 if(new_block == -1){
+			return -1;
+		 }
+		 else{
+			rd[rootdir_index].block_index = new_block;
+			fd_table[fd].block_index = new_block;
+		 }
+	}
 
 	while(count > 0 && offset_to_block(fd, fd_table[fd].offset) != FAT_EOC){
 		block_read(offset_to_block(fd, fd_table[fd].offset), dirty_buf);
@@ -424,8 +459,14 @@ int fs_write(int fd, void *buf, size_t count)
 		fd_table[fd].offset += amount_to_write;
 		count -= amount_to_write;
 		buf += amount_to_write;
+		//should we modify the rd entry for the file to increase the size ?
+		rd[rootdir_index].file_size += amount_to_write;
+
 		if(offset_to_block(fd, fd_table[fd].offset) == FAT_EOC){
-			add_data_block(fd);
+			if(add_data_block(fd) == -1){
+				break;
+				//if disk is full, break
+			}
 		}
 	}
 	return amount_written;
@@ -440,11 +481,23 @@ int fs_read(int fd, void *buf, size_t count)
 
 	char bounce_buf[BLOCK_SIZE];
 
+	if(sb == NULL){
+		perror("no filesystem is currently mounted");
+		return -1;
+	}
+	if(fd > FS_OPEN_MAX_COUNT-1 || fd_table[fd].filename[0] == '\0'){
+		perror("invalid file descriptor");
+		return -1;
+	}
+	if(buf == NULL){
+		perror("invalid buffer");
+		return -1;
+	}
+	
 	if((int)(fd_table[fd].offset+count) > fs_stat(fd)){
-		//maybe set count to be until eof?
+		//set count to number of bytes until the end of file
 		count = fs_stat(fd) - fd_table[fd].offset;
 	}
-	//RETURN BUFF UNTIL EOF IF OFFSET+COUNT > FILE SIZE
 
 	while(count > 0){
 		//read entire block
@@ -510,5 +563,18 @@ int add_data_block(int fd){
 
 	fat[fat_looper] = new_block_index;
 	fat[new_block_index] = FAT_EOC;
+	return new_block_index;
+}
+
+int allocate_data_block(void){
+	int new_block_index = -1;
+	
+	for(int i=0; i < sb->data_block_amount; i++){
+		if(fat[i] == 0){
+			new_block_index = i;
+			break;
+		}
+	}
+
 	return new_block_index;
 }
