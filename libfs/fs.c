@@ -48,7 +48,6 @@ struct file_descriptor_entry* fd_table = NULL;
 
 int fs_mount(const char *diskname)
 {
-	size_t fat_size;
 	fat_entry* fat_buffer;
 	char expected_sig[8] = {'E','C','S','1','5','0','F','S'};
 	sb = malloc(sizeof(struct superblock));
@@ -87,12 +86,10 @@ int fs_mount(const char *diskname)
 	}
 
 	//allocate and read FAT
-
-	fat_size = sb->fat_block_amount * BLOCK_SIZE;
 	fat = malloc(sizeof(fat_entry) * sb->data_block_amount);
 		//this may underallocate space (ie in the case of 2 data blocks)
-		//to fix, read differently, [block read into buffer and then memcpy the buffer into the fat]
-	fat_buffer = malloc(fat_size);
+		//to fix, block read into fat_buffer and then memcpy the buffer into the fat]
+	fat_buffer = malloc(sb->fat_block_amount * BLOCK_SIZE);
 	for(int i=1; i <= sb->fat_block_amount; i++){
 		if(block_read(i,(void*)fat_buffer+(BLOCK_SIZE*(i-1))) == -1){
 			perror("bad fat read");
@@ -143,8 +140,8 @@ int fs_umount(void)
 		}
 	}
 
+	//persist changes made to the fat
 	memcpy(fat_buffer, fat, sizeof(fat_entry) * sb->data_block_amount);
-	
 	for(int i=1; i <= sb->fat_block_amount; i++){
 		if(block_write(i,(void*)fat_buffer+(BLOCK_SIZE*(i-1))) == -1){
 			perror("bad fat write");
@@ -153,6 +150,7 @@ int fs_umount(void)
 	}
 	free(fat_buffer);
 
+	//persist changes made to the root dir
 	if(block_write(sb->root_dir_index, rd) == -1){
 		perror("bad root dir read");
 		return -1;
@@ -288,12 +286,14 @@ int fs_delete(const char *filename)
 		return -1;
 	}
 
-	while(fat[fat_index_looper] != FAT_EOC){
-		next_index = fat[fat_index_looper];
+	if(fat_index_looper != FAT_EOC){
+		while(fat[fat_index_looper] != FAT_EOC){
+			next_index = fat[fat_index_looper];
+			fat[fat_index_looper] = 0;
+			fat_index_looper = next_index;
+		}
 		fat[fat_index_looper] = 0;
-		fat_index_looper = next_index;
-	}
-	fat[fat_index_looper] = 0;
+		}
 	return 0;
 	/* TODO: Phase 2 */
 }
@@ -357,6 +357,7 @@ int fs_open(const char *filename)
 	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
 		if(!strcmp(rd[i].filename, filename)){
 			fd_table[file_desc].block_index = rd[i].block_index;
+			break;
 		}
 	}
 	return file_desc;
@@ -562,7 +563,7 @@ int offset_to_block(int fd, size_t offset){
 			return fat_looper;
 		}
 	}
-	//return data block index (recall: NOT FAT INDEX)
+	//return actual index of the data block (including offset from superblock, block for root dir, and fat blocks)
 	actual_block = fat_looper + 1 + 1 + sb->fat_block_amount;
 	return actual_block;
 }
@@ -598,6 +599,10 @@ int allocate_data_block(void){
 			new_block_index = i;
 			break;
 		}
+	}
+	
+	if(new_block_index != -1){
+		fat[new_block_index] = FAT_EOC;
 	}
 
 	return new_block_index;
