@@ -12,6 +12,7 @@
 int offset_to_block(int, size_t);
 int add_data_block(int);
 void free_all(void);
+int allocate_data_block(void);
 
 /* TODO: Phase 1 */
 struct __attribute__((__packed__)) superblock{
@@ -48,6 +49,7 @@ struct file_descriptor_entry* fd_table = NULL;
 int fs_mount(const char *diskname)
 {
 	size_t fat_size;
+	fat_entry* fat_buffer;
 	char expected_sig[8] = {'E','C','S','1','5','0','F','S'};
 	sb = malloc(sizeof(struct superblock));
 	rd = calloc(128, sizeof(struct rootdir_entry));
@@ -87,17 +89,19 @@ int fs_mount(const char *diskname)
 	//allocate and read FAT
 
 	fat_size = sb->fat_block_amount * BLOCK_SIZE;
-	//fat = malloc(sizeof(fat_entry) * sb->data_block_amount);
+	fat = malloc(sizeof(fat_entry) * sb->data_block_amount);
 		//this may underallocate space (ie in the case of 2 data blocks)
 		//to fix, read differently, [block read into buffer and then memcpy the buffer into the fat]
-	fat = malloc(fat_size);
+	fat_buffer = malloc(fat_size);
 	for(int i=1; i <= sb->fat_block_amount; i++){
-		if(block_read(i,(void*)fat+(BLOCK_SIZE*(i-1))) == -1){
+		if(block_read(i,(void*)fat_buffer+(BLOCK_SIZE*(i-1))) == -1){
 			perror("bad fat read");
 			free_all();
 			return -1;
-		}	
+		}
 	}
+	memcpy(fat, fat_buffer, sizeof(fat_entry) * sb->data_block_amount);
+	free(fat_buffer);
 
 	//verify FAT format
 	if(fat[0] != FAT_EOC){
@@ -125,6 +129,9 @@ void free_all(void){
 
 int fs_umount(void)
 {
+	fat_entry* fat_buffer;
+	fat_buffer = malloc(sb->fat_block_amount * BLOCK_SIZE);
+
 	if(sb == NULL){
 		perror("no filesystem mounted");
 		return -1;
@@ -135,6 +142,22 @@ int fs_umount(void)
 			return -1;
 		}
 	}
+
+	memcpy(fat_buffer, fat, sizeof(fat_entry) * sb->data_block_amount);
+	
+	for(int i=1; i <= sb->fat_block_amount; i++){
+		if(block_write(i,(void*)fat_buffer+(BLOCK_SIZE*(i-1))) == -1){
+			perror("bad fat write");
+			return -1;
+		}
+	}
+	free(fat_buffer);
+
+	if(block_write(sb->root_dir_index, rd) == -1){
+		perror("bad root dir read");
+		return -1;
+	}
+
 	if(block_disk_close() == -1){
 		perror("virtual disk cannot be closed");
 		return -1;
@@ -166,7 +189,6 @@ int fs_info(void)
 	int free_fat = 0;
 	int free_rd = 0;
 	if(sb == NULL){
-		//check if this is right
 		perror("no virtual disk opened");
 		return -1;
 	}
@@ -405,8 +427,8 @@ int fs_write(int fd, void *buf, size_t count)
 	int block_offset = 0;
 	int amount_to_write = 0;
 	int amount_written = 0;
-
 	char dirty_buf[BLOCK_SIZE];
+	
 	int rootdir_index = 0;
 	int new_block = 0;
 
@@ -528,6 +550,7 @@ int fs_read(int fd, void *buf, size_t count)
 
 int offset_to_block(int fd, size_t offset){
 	int block_number;
+	int actual_block;
 	//set fat looper to first data block for the file
 	uint16_t fat_looper = fd_table[fd].block_index;
 	//how many "blocks" in we are into the file
@@ -536,11 +559,12 @@ int offset_to_block(int fd, size_t offset){
 	for(int i=0; i<block_number; i++){
 		fat_looper = fat[fat_looper];
 		if(fat_looper == FAT_EOC){
-			break;
+			return fat_looper;
 		}
 	}
 	//return data block index (recall: NOT FAT INDEX)
-	return fat_looper;
+	actual_block = fat_looper + 1 + 1 + sb->fat_block_amount;
+	return actual_block;
 }
 
 int add_data_block(int fd){
