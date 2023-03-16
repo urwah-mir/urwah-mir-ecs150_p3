@@ -191,11 +191,11 @@ int fs_info(void)
 		return -1;
 	}
 	printf("%s \n", "FS Info:");
-	printf("%s %d\n", "total_blk_count=", sb->total_blocks);
-	printf("%s %d\n", "fat_blk_count=", sb->fat_block_amount);
-	printf("%s %d\n", "rdir_blk=", sb->root_dir_index);
-	printf("%s %d\n", "data_blk=", sb->data_block_start);
-	printf("%s %d\n", "data_blk_count=", sb->data_block_amount);
+	printf("%s%d\n", "total_blk_count=", sb->total_blocks);
+	printf("%s%d\n", "fat_blk_count=", sb->fat_block_amount);
+	printf("%s%d\n", "rdir_blk=", sb->root_dir_index);
+	printf("%s%d\n", "data_blk=", sb->data_block_start);
+	printf("%s%d\n", "data_blk_count=", sb->data_block_amount);
 	
 	for(int i=0; i<sb->data_block_amount; i++){
 		if(fat[i] == 0){
@@ -309,7 +309,7 @@ int fs_ls(void)
 		if(rd[i].filename[0] == '\0'){
 		}
 		else{
-			printf("%s\n",rd[i].filename);
+			printf("file: %s, size: %d, data_blk: %d\n", rd[i].filename, rd[i].file_size, rd[i].block_index);
 		}
 	}
 	return 0;
