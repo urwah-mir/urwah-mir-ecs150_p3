@@ -454,7 +454,7 @@ int fs_write(int fd, void *buf, size_t count)
 	}
 	//if file is empty (has no allocated blocked)
 	//allocate first block, update rd and fd
-	if(rd[rootdir_index].block_index == FAT_EOC){
+	if(rd[rootdir_index].block_index == FAT_EOC && count > 0){
 		 new_block = allocate_data_block();
 		 if(new_block == -1){
 			return -1;
