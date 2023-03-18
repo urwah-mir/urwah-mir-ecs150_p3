@@ -1,9 +1,0 @@
-MOUNT
-CREATE	test_mulread
-OPEN	test_mulread
-WRITE   FILE    test_mulread
-SEEK    5
-READ    14331   FILE    test_mulread1
-CLOSE
-DELETE	test_mulread
-UMOUNT
