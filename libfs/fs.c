@@ -61,26 +61,26 @@ int fs_mount(const char *diskname)
 
 	//read superblock
 	if(block_read(0, sb) == -1){
-		perror("bad superbloack read");
+		//perror("bad superbloack read");
 		free_all();
 		return -1;
 	}
 
 	//verify filesystem format
 	if (memcmp(sb->signature, expected_sig, 8) != 0){
-		perror("invalid signature");
+		//perror("invalid signature");
 		free_all();
 		return -1;	
 	}
 
 	if (block_disk_count() != sb->total_blocks){
-		perror("invalid block disk count");
+		//perror("invalid block disk count");
 		free_all();
 		return -1;	
 	}
 
 	if (sb->fat_block_amount+1 != sb->root_dir_index){
-		perror("invalid root dir index");
+		//perror("invalid root dir index");
 		free_all();
 		return -1;	
 	}
@@ -92,7 +92,8 @@ int fs_mount(const char *diskname)
 	fat_buffer = malloc(sb->fat_block_amount * BLOCK_SIZE);
 	for(int i=1; i <= sb->fat_block_amount; i++){
 		if(block_read(i,(void*)fat_buffer+(BLOCK_SIZE*(i-1))) == -1){
-			perror("bad fat read");
+			//perror("bad fat read");
+			free(fat_buffer);
 			free_all();
 			return -1;
 		}
@@ -102,14 +103,14 @@ int fs_mount(const char *diskname)
 
 	//verify FAT format
 	if(fat[0] != FAT_EOC){
-		perror("invalid fat format");
+		//perror("invalid fat format");
 		free_all();
 		return -1;
 	}
 
 	//read root directory
 	if(block_read(sb->root_dir_index, rd) == -1){
-		perror("bad root dir read");
+		//perror("bad root dir read");
 		free_all();
 		return -1;
 	}
@@ -130,12 +131,12 @@ int fs_umount(void)
 	fat_buffer = malloc(sb->fat_block_amount * BLOCK_SIZE);
 
 	if(sb == NULL){
-		perror("no filesystem mounted");
+		//perror("no filesystem mounted");
 		return -1;
 	}
 	for(int i=0; i<FS_OPEN_MAX_COUNT; i++){
 		if(fd_table[i].filename[0] != '\0'){
-			perror("open file descriptors");
+			//perror("open file descriptors");
 			return -1;
 		}
 	}
@@ -144,7 +145,8 @@ int fs_umount(void)
 	memcpy(fat_buffer, fat, sizeof(fat_entry) * sb->data_block_amount);
 	for(int i=1; i <= sb->fat_block_amount; i++){
 		if(block_write(i,(void*)fat_buffer+(BLOCK_SIZE*(i-1))) == -1){
-			perror("bad fat write");
+			free(fat_buffer);
+			//perror("bad fat write");
 			return -1;
 		}
 	}
@@ -152,31 +154,16 @@ int fs_umount(void)
 
 	//persist changes made to the root dir
 	if(block_write(sb->root_dir_index, rd) == -1){
-		perror("bad root dir read");
+		//perror("bad root dir read");
 		return -1;
 	}
 
 	if(block_disk_close() == -1){
-		perror("virtual disk cannot be closed");
+		//perror("virtual disk cannot be closed");
 		return -1;
 	}
 
-	if(sb != NULL){
-		free(sb);
-		sb = NULL;
-	}
-	if(rd != NULL){
-		free(rd);
-		rd = NULL;
-	}
-	if(fat != NULL){
-		free(fat);
-		fat = NULL;
-	}
-	if(fd_table != NULL){
-		free(fd_table);
-		fd_table = NULL;
-	}
+	free_all();
 
 	return 0;
 	/* TODO: Phase 1 */
@@ -187,7 +174,7 @@ int fs_info(void)
 	int free_fat = 0;
 	int free_rd = 0;
 	if(sb == NULL){
-		perror("no virtual disk opened");
+		//perror("no virtual disk opened");
 		return -1;
 	}
 	printf("%s \n", "FS Info:");
@@ -219,21 +206,21 @@ int fs_create(const char *filename)
 {
 	//check error handling
 	if(sb == NULL){
-		perror("no filesystem mounted");
+		//perror("no filesystem mounted");
 		return -1;
 	}
 	if(memchr(filename, '\0', 16) == NULL || memchr(filename, '\0', 16) == filename){
-		perror("invalid filename");
+		//perror("invalid filename");
 		return -1;
 	}
 	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
 		if(strcmp(rd[i].filename, filename) == 0){
-			perror("filename already exists");
+			//perror("filename already exists");
 			return -1;
 		}
 	}
 	if(strlen(filename) > FS_FILENAME_LEN-1){
-		perror("filename is too long");
+		//perror("filename is too long");
 		return -1;
 	}
 
@@ -246,7 +233,7 @@ int fs_create(const char *filename)
 		}
 		else{}
 	}
-	perror("root directory has max number of files");
+	//perror("root directory has max number of files");
 	return -1;
 	/* TODO: Phase 2 */
 }
@@ -258,16 +245,16 @@ int fs_delete(const char *filename)
 	int file_found = 0;
 	
 	if(sb == NULL){
-		perror("no filesystem mounted");
+		//perror("no filesystem mounted");
 		return -1;
 	}
 	if(memchr(filename, '\0', 16) == NULL || memchr(filename, '\0', 16) == filename){
-		perror("invalid filename");
+		//perror("invalid filename");
 		return -1;
 	}
 	for(int i=0; i<FS_OPEN_MAX_COUNT; i++){
 		if(strcmp(fd_table[i].filename, filename) == 0){
-			perror("file is currently open");
+			//perror("file is currently open");
 			return -1;
 		}
 	}
@@ -282,7 +269,7 @@ int fs_delete(const char *filename)
 	}
 
 	if(file_found == 0){
-		perror("no file of that name found");
+		//perror("no file of that name found");
 		return -1;
 	}
 
@@ -301,7 +288,7 @@ int fs_delete(const char *filename)
 int fs_ls(void)
 {
 	if(sb == NULL){
-		perror("no filesystem mounted");
+		//perror("no filesystem mounted");
 		return -1;
 	}
 	printf("%s \n","FS Ls:");
@@ -322,11 +309,11 @@ int fs_open(const char *filename)
 	int file_found = 0;
 
 	if(sb == NULL){
-		perror("no filesystem mounted");
+		//perror("no filesystem mounted");
 		return -1;
 	}
 	if(memchr(filename, '\0', 16) == NULL || memchr(filename, '\0', 16) == filename){
-		perror("invalid filename");
+		//perror("invalid filename");
 		return -1;
 	}
 	for(int i=0; i<FS_FILE_MAX_COUNT; i++){
@@ -335,7 +322,7 @@ int fs_open(const char *filename)
 		}
 	}
 	if(file_found == 0){
-		perror("no file of that name found");
+		//perror("no file of that name found");
 		return -1;
 	}
 
@@ -350,7 +337,7 @@ int fs_open(const char *filename)
 	}
 
 	if(file_desc == -1){
-		perror("max number of files are open");
+		//perror("max number of files are open");
 		return file_desc;
 	}
 
@@ -367,11 +354,11 @@ int fs_open(const char *filename)
 int fs_close(int fd)
 {
 	if(sb == NULL){
-		perror("no filesystem mounted");
+		//perror("no filesystem mounted");
 		return -1;
 	}
 	if(fd > FS_OPEN_MAX_COUNT-1 || fd_table[fd].filename[0] == '\0'){
-		perror("invalid file descriptor");
+		//perror("invalid file descriptor");
 		return -1;
 	}
 
@@ -385,11 +372,11 @@ int fs_stat(int fd)
 	int file_size = -1;
 	
 	if(sb == NULL){
-		perror("no filesystem mounted");
+		//perror("no filesystem mounted");
 		return -1;
 	}
 	if(fd > FS_OPEN_MAX_COUNT-1 || fd_table[fd].filename[0] == '\0'){
-		perror("invalid file descriptor");
+		//perror("invalid file descriptor");
 		return -1;
 	}
 
@@ -407,15 +394,15 @@ int fs_stat(int fd)
 int fs_lseek(int fd, size_t offset)
 {
 	if(sb == NULL){
-		perror("no filesystem is currently mounted");
+		//perror("no filesystem is currently mounted");
 		return -1;
 	}
 	if(fd > FS_OPEN_MAX_COUNT-1 || fd_table[fd].filename[0] == '\0'){
-		perror("invalid file descriptor");
+		//perror("invalid file descriptor");
 		return -1;
 	}
 	if(fs_stat(fd) < (int)offset){
-		perror("offset is larger than file size");
+		//perror("offset is larger than file size");
 		return -1;
 	}
 	fd_table[fd].offset = offset;
@@ -434,15 +421,15 @@ int fs_write(int fd, void *buf, size_t count)
 	int new_block = 0;
 
 	if(sb == NULL){
-		perror("no filesystem is currently mounted");
+		//perror("no filesystem is currently mounted");
 		return -1;
 	}
 	if(fd > FS_OPEN_MAX_COUNT-1 || fd_table[fd].filename[0] == '\0'){
-		perror("invalid file descriptor");
+		//perror("invalid file descriptor");
 		return -1;
 	}
 	if(buf == NULL){
-		perror("invalid buffer");
+		//perror("invalid buffer");
 		return -1;
 	}
 
@@ -505,15 +492,15 @@ int fs_read(int fd, void *buf, size_t count)
 	char bounce_buf[BLOCK_SIZE];
 
 	if(sb == NULL){
-		perror("no filesystem is currently mounted");
+		//perror("no filesystem is currently mounted");
 		return -1;
 	}
 	if(fd > FS_OPEN_MAX_COUNT-1 || fd_table[fd].filename[0] == '\0'){
-		perror("invalid file descriptor");
+		//perror("invalid file descriptor");
 		return -1;
 	}
 	if(buf == NULL){
-		perror("invalid buffer");
+		//perror("invalid buffer");
 		return -1;
 	}
 	
